@@ -222,7 +222,7 @@ fi
 
 if [ -n "$ACL" ]; then
 	if [ -n "$LNETIN" ]; then
-		ACCESSLISTPR=`bgpq4 -F " permit %n %i any\n" -A -R 24 -l $ACL $ASSET`
+		ACCESSLISTPR=`bgpq4 -F " permit ip %n %i any\n" -A -R 24 -l $ACL $ASSET`
 		RC="$?"
 		if [ "$RC" != "0" ]; then
 			decho "!Recive error from bgpq4"
