@@ -232,7 +232,7 @@ if [ -n "$ACL" ]; then
 			echo "no ip access-list extended $ACL"
 			echo "ip access-list extended $ACL"
 			echo "$ACCESSLISTPR"
-			echo " permit ip $LNET $LWSUBNET any/"
+			echo " permit ip $LNET $LWSUBNET any"
 			echo "exit"
 			echo "!"
 
