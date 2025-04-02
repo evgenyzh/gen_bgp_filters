@@ -66,6 +66,143 @@ if [ $DEBUG != 0 ];then
 	echo $1
 fi
 }
+
+cisco_as_path () {
+
+	if [ -n "$ASPATH" ]; then
+		case $NO4BYTE in
+			"0" )	
+				ASPATHPR=`bgpq4 -f $AS -l $ASPATH -3 $ASSET `
+				RC="$?"
+				if [ "$RC" != "0" ]; then
+					decho "!Recive error from bgpq4"
+					exit 1
+				fi
+				if echo "$ASPATHPR" | grep -q 'permit' >/dev/null; then
+					echo "$ASPATHPR"
+					ZEROWORK=1
+				else 
+					ZEROOUTPUT=1
+					decho "!Empty result found, exit status will be 1"
+					decho "!$ASPATHPR"
+				fi
+				echo "!";;
+			"1" )
+				ASPATHPR=`bgpq4 -f $AS -l $ASPATH $ASSET`
+				RC="$?"
+				if [ "$RC" != "0" ]; then
+					decho "!Recive error from bgpq4"
+					exit 1
+				fi
+				if echo "$ASPATHPR" | grep -q 'permit' >/dev/null; then
+					echo "$ASPATHPR"
+					ZEROWORK=1
+				else
+					ZEROOUTPUT=1
+					decho "!Empty result found, exit status will be 1"
+					decho "!$ASPATHPR"
+				fi
+				echo "!"
+		esac
+	else
+		decho "!"
+		decho "! Name of as-path list not defined, can not create it"
+		decho "!"
+	fi
+}
+
+cisco_ip_prefix () {
+	
+	if [ -n  "$ALLMASK" ]; then
+		PREFIXPR=`bgpq4 -A -l $PREFIX -R $ALLMASK $ASSET`
+		RC="$?"
+		if [ "$RC" != "0" ]; then
+			decho "!Recive error from bgpq4"
+			exit 1
+		fi
+		if echo "$PREFIXPR" | grep -q 'permit' >/dev/null; then
+			echo "$PREFIXPR"
+			ZEROWORK=1
+		else
+			ZEROOUTPUT=1
+			decho "!Empty result found, exit status will be 1"
+			decho "!$PREFIXPR"
+		fi
+		echo "!" 
+	else
+		PREFIXPR=`bgpq4 -A -l $PREFIX $ASSET`
+		RC="$?"
+		if [ "$RC" != "0" ]; then
+			decho "!Recive error from bgpq4"
+			exit 1
+		fi
+		if echo "$PREFIXPR" | grep -q 'permit' >/dev/null; then
+			echo "$PREFIXPR"
+			ZEROWORK=1
+		else
+			ZEROOUTPUT=1
+			decho "!Empty result found, exit status will be 1"
+			decho "!$PREFIXPR"
+		fi
+		echo "!"
+	fi
+}
+
+cisco_in_acl () {
+
+    ACCESSLISTPR=`bgpq4 -F " permit ip %n %i any\n" -A -R 24 -l $ACL $ASSET`
+	RC="$?"
+	if [ "$RC" != "0" ]; then
+		decho "!Recive error from bgpq4"
+                exit 1
+        fi
+	if echo "$ACCESSLISTPR" | grep -q 'permit' >/dev/null; then
+		echo "no ip access-list extended $ACL"
+		echo "ip access-list extended $ACL"
+		echo "$ACCESSLISTPR"
+		echo " permit ip $LNET $LWSUBNET any"
+		echo "exit"
+		echo "!"
+
+		ZEROWORK=1
+	else
+		ZEROOUTPUT=1
+		decho "!Empty result found, exit status will be 1"
+		decho "no ip access-list extended $ACL"
+                decho "ip access-list extended $ACL"
+		decho "!$ACCESSLISTPR"
+		decho " permit ip $LNET $LWSUBNET any"
+		decho "!exit"
+		decho "!"
+	fi
+}
+
+cisco_urpf_acl () {
+
+	URPFLIST=`bgpq4 -F " permit %n %i\n" -A -R 24 -l $URPF $ASSET`
+	RC="$?"
+	if [ "$RC" != "0" ]; then
+		decho "!Recive error from bgpq"
+		exit 1
+	fi
+	if echo "$URPFLIST" | grep -q 'permit' >/dev/null; then
+		echo "no access-list $URPF"
+		echo "access-list $URPF remark * URPF loose for $ASSET *"
+		echo "$URPFLIST"
+		echo "exit"
+		echo "!"
+		ZEROWORK=1
+	else
+		ZEROOUTPUT=1
+		decho "!Empty result found, exit status will be 1"
+		decho "no access-list $URPF"
+                decho "access-list $URPF remark * URPF loose for $ASSET *"
+                decho "$URPFLIST"
+                decho "exit"
+                decho "!"
+	fi
+}
+
 while getopts ":indR:A:S:F:P:U:G:L:" optname
 do
 	case $optname in
@@ -134,46 +271,7 @@ conf t'
 fi
 
 if [ -n "$AS" ]; then
-	if [ -n "$ASPATH" ]; then
-		case $NO4BYTE in
-			"0" )	
-				ASPATHPR=`bgpq4 -f $AS -l $ASPATH -3 $ASSET `
-				RC="$?"
-				if [ "$RC" != "0" ]; then
-					decho "!Recive error from bgpq4"
-					exit 1
-				fi
-				if echo "$ASPATHPR" | grep -q 'permit' >/dev/null; then
-					echo "$ASPATHPR"
-					ZEROWORK=1
-				else 
-					ZEROOUTPUT=1
-					decho "!Empty result found, exit status will be 1"
-					decho "!$ASPATHPR"
-				fi
-				echo "!";;
-			"1" )
-				ASPATHPR=`bgpq4 -f $AS -l $ASPATH $ASSET`
-				RC="$?"
-				if [ "$RC" != "0" ]; then
-					decho "!Recive error from bgpq4"
-					exit 1
-				fi
-				if echo "$ASPATHPR" | grep -q 'permit' >/dev/null; then
-					echo "$ASPATHPR"
-					ZEROWORK=1
-				else
-					ZEROOUTPUT=1
-					decho "!Empty result found, exit status will be 1"
-					decho "!$ASPATHPR"
-				fi
-				echo "!"
-		esac
-	else
-		decho "!"
-		decho "! Name of as-path list not defined, can not create it"
-		decho "!"
-	fi
+	cisco_as_path
 else
 	decho "!"
 	decho "! AUTONOMUS SYSTEM not defined, can not create as-path list"
@@ -181,39 +279,7 @@ else
 fi
 
 if [ -n "$PREFIX" ]; then
-	if [ -n  "$ALLMASK" ]; then
-		PREFIXPR=`bgpq4 -A -l $PREFIX -R $ALLMASK $ASSET`
-		RC="$?"
-		if [ "$RC" != "0" ]; then
-			decho "!Recive error from bgpq4"
-			exit 1
-		fi
-		if echo "$PREFIXPR" | grep -q 'permit' >/dev/null; then
-			echo "$PREFIXPR"
-			ZEROWORK=1
-		else
-			ZEROOUTPUT=1
-			decho "!Empty result found, exit status will be 1"
-			decho "!$PREFIXPR"
-		fi
-		echo "!" 
-	else
-		PREFIXPR=`bgpq4 -A -l $PREFIX $ASSET`
-		RC="$?"
-		if [ "$RC" != "0" ]; then
-			decho "!Recive error from bgpq4"
-			exit 1
-		fi
-		if echo "$PREFIXPR" | grep -q 'permit' >/dev/null; then
-			echo "$PREFIXPR"
-			ZEROWORK=1
-		else
-			ZEROOUTPUT=1
-			decho "!Empty result found, exit status will be 1"
-			decho "!$PREFIXPR"
-		fi
-		echo "!"
-	fi
+	cisco_ip_prefix
 else 
 	decho "!"
 	decho "! Prefix list name not defined, can not create prefix-list"
@@ -221,32 +287,9 @@ else
 fi
 
 if [ -n "$ACL" ]; then
+	
 	if [ -n "$LNETIN" ]; then
-		ACCESSLISTPR=`bgpq4 -F " permit ip %n %i any\n" -A -R 24 -l $ACL $ASSET`
-		RC="$?"
-		if [ "$RC" != "0" ]; then
-			decho "!Recive error from bgpq4"
-                        exit 1
-                fi
-		if echo "$ACCESSLISTPR" | grep -q 'permit' >/dev/null; then
-			echo "no ip access-list extended $ACL"
-			echo "ip access-list extended $ACL"
-			echo "$ACCESSLISTPR"
-			echo " permit ip $LNET $LWSUBNET any"
-			echo "exit"
-			echo "!"
-
-			ZEROWORK=1
-		else
-			ZEROOUTPUT=1
-			decho "!Empty result found, exit status will be 1"
-			decho "no ip access-list extended $ACL"
-                        decho "ip access-list extended $ACL"
-			decho "!$ACCESSLISTPR"
-			decho " permit ip $LNET $LWSUBNET any"
-			decho "!exit"
-			decho "!"
-		fi
+		cisco_in_acl
 	else 
 		decho "!"
 		decho "! Link network not defined, can not create access-list"
@@ -259,29 +302,7 @@ else
 fi
 
 if [ -n "$URPF" ]; then
-	URPFLIST=`bgpq4 -F " permit %n %i\n" -A -R 24 -l $URPF $ASSET`
-	RC="$?"
-	if [ "$RC" != "0" ]; then
-		decho "!Recive error from bgpq"
-		exit 1
-	fi
-	if echo "$URPFLIST" | grep -q 'permit' >/dev/null; then
-		echo "no access-list $URPF"
-		echo "access-list $URPF remark * URPF loose for $ASSET *"
-		echo "$URPFLIST"
-		echo "exit"
-		echo "!"
-		ZEROWORK=1
-	else
-		ZEROOUTPUT=1
-		decho "!Empty result found, exit status will be 1"
-		decho "no access-list $URPF"
-                decho "access-list $URPF remark * URPF loose for $ASSET *"
-                decho "$URPFLIST"
-                decho "exit"
-                decho "!"
-	fi
-		
+	cisco_urpf_acl
 else
 	decho "!"
 	decho "! URPF list name not defined, can not create access-list for URPF"
