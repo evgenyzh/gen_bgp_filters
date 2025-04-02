@@ -1,8 +1,7 @@
 BGP filter generator for cisco routers.
-FreeBSD version.
+Linux version.
 Need to be installed for correct work:
-BGPQ3 - http://snar.spb.ru/prog/bgpq3/
-BGPQ - http://www.lexa.ru/snar/bgpq.html
+BGPQ4 - https://github.com/bgp/bgpq4
 ipcalc - http://jodies.de/ipcalc
 
 Options:
@@ -14,10 +13,9 @@ Options:
 		-S - peer AUTONOMUS SYSTEM number
 		-F - as-path list number 
 		-P - prefix list name
-		-U - UPRF standard acl number
+		-U - URPF standard acl number
 		-G - Extended in ACL name on interface
 		-L - Link network x.x.x.x/y
 
 Usage example:
 gen_bgp_filters.sh -nd -R 24 -A AS-DSIJSC -S 8345 -F 11 -P prefix-dsi-in -U 1800 -G acl-dsi-in -L 10.10.10.10/30
-
