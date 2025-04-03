@@ -405,6 +405,7 @@ juniper_filter () {
 	if echo "$FWFILTER" | grep -q '[0-9]' >/dev/null; then
 		echo 'firewall {
     family inet {'
+                echo "        replace:"
 		echo "        filter $ACL {"
 		echo '            term TRUSTED-SOURCE {
                 from {
@@ -416,6 +417,7 @@ juniper_filter () {
                 then {
                     accept;
                 }
+            }
             term DEFAULT {
                 then discard;
             }
@@ -429,6 +431,7 @@ juniper_filter () {
 		ZEROOUTPUT=1
 		decho 'firewall {
 #    family inet {'
+                decho "        replace:"
 		decho "        filter $ACL {"
 		decho '            term TRUSTED-SOURCE {
 #                from {
@@ -440,6 +443,7 @@ juniper_filter () {
 #                then {
 #                    accept;
 #                }
+#            }    
 #            term DEFAULT {
 #                then discard;
 #            }
@@ -462,7 +466,8 @@ juniper_urpf_filter () {
 	if echo "$URPFLIST" | grep -q '[0-9]' >/dev/null; then
 		echo 'firewall {
     family inet {'
-		echo "        filter $URPF {"
+                echo "        replace:"
+                echo "        filter $URPF {"
 		echo "        /* URPF loose for $ASSET */"
 		echo '            term TRUSTED-SOURCE-URPF {
                 from {
@@ -473,6 +478,7 @@ juniper_urpf_filter () {
                 then {
                     accept;
                 }
+	    }
             term DEFAULT {
                 then discard;
             }
@@ -485,6 +491,7 @@ juniper_urpf_filter () {
 		ZEROOUTPUT=1
 		decho 'firewall {
 #    family inet {'
+		decho "        replace:"    
 		decho "        filter $URPF {"
 		decho "        /* URPF loose for $ASSET */"
 		decho '            term TRUSTED-SOURCE-URPF {
@@ -496,6 +503,7 @@ juniper_urpf_filter () {
 #                then {
 #                    accept;
 #                }
+#            }
 #            term DEFAULT {
 #                then discard;
 #            }
@@ -512,11 +520,15 @@ juniper () {
 if [ $DEBUG != 0 ];then
 	echo '#
 	#configure
-#load merge terminal'
+	#
+#load replace terminal'
 else
 	echo '#
-configure
-load merge terminal <<EOF'
+#configure
+#
+#load replace terminal
+#'
+echo "#"
 fi
 
 if [ -n "$AS" ]; then
@@ -563,7 +575,7 @@ if [ $DEBUG != 0 ];then
 #
 #'
 else
-        echo 'EOF
+        echo '# Press Ctrl+D
 #
 #'
 fi
