@@ -1,25 +1,24 @@
 #!/bin/bash
 #Chack for bgpq4 and ipcalc
-if which bgpq4  >/dev/null
-then 
-	echo "! BGPQ4 found" >/dev/null
-else
-	echo "!BGPQ4 not found please install it"
-	exit 1
-fi
 
-if which ipcalc >/dev/null
-then
-	echo "! ipcalc found" >/dev/null
-else
-	echo "!ipcalc not found please install it"
-	exit 1
-fi
+# Function to check if a command exists and print a message accordingly
+check_command() {
+    if which "$1" >/dev/null; then
+        echo "! $1 found" >/dev/null
+    else
+        echo "!$1 not found, please install it"
+        exit 1
+    fi
+}
 
-RC=1 #Exit status by default
-ZEROOUTPUT=0 #no Zero output by default 
-ZEROWORK=0 # by deafult will be 0
-DEBUG=0 #Debug is off by default
+# Check for bgpq4 and ipcalc
+check_command "bgpq4"
+check_command "ipcalc"
+
+RC=1		 # Exit status by default
+ZEROOUTPUT=0	 # No Zero output by default 
+ZEROWORK=0	 # By deafult will be 0
+DEBUG=0		 # Debug is off by default
 LEGEND="Usage:
 	-d Print debug output
 	-R for allow more specific routes up to masklen
@@ -139,22 +138,17 @@ ipnetcalc () {
 }
 
 vecho () {
-#Add vendor specific comment at the begining of the output
-	if [ -n "$CLIVENDOR" ];then
-        	if [ "$CLIVENDOR" = "C" ];then
-                	echo "!$1"
-        	elif [ "$CLIVENDOR" = "J" ];then
-                	echo "#$1"
-        	elif [ "$CLIVENDOR" = "H" ];then
-                	echo "#$1"
-		fi
-
-	else
-        	echo "!$1"
-	fi
-
+    if [ -n "$CLIVENDOR" ]; then
+        case "$CLIVENDOR" in
+            J) prefix="#" ;;
+            H) prefix="#" ;;
+            *) prefix="!" ;;
+        esac
+        printf "%s\n" "$*" | while IFS= read -r line; do
+            printf "%s%s\n" "$prefix" "$line"
+        done
+    fi
 }
-
 
 # Combined function to handle vendor-specific debug output
 # Prints a message with a vendor-specific prefix only if debugging is enabled.
@@ -423,120 +417,95 @@ juniper_route_filter () {
 	fi
 }
 
+#Get juniper filter formatted prefixes
+get_juniper_bgpq_prefix_list () {
+    if [ -z "${FWFILTER:-}" ]; then
+    	FWFILTER=`bgpq4 -F "                        %n\/%l;\n" -A -R 24 $ASSET`
+    fi
+}
+
+# Common Juniper firewall template
+juniper_firewall_template="firewall {
+    family inet {
+        replace:
+        filter %s {
+        /* Input filter for %s */
+            term TRUSTED-SOURCE {
+                from {
+                    source-address {
+%b
+                    }
+                }
+                then {
+                    accept;
+                }
+            }
+            term DEFAULT {
+                then discard;
+            }
+        }
+    }
+}
+"
+# Juniper urpf filter template
+juniper_firewall_urpf_template="firewall {
+    family inet {
+        replace:
+        filter %s {
+        /* URPF loose for %s */
+            term TRUSTED-SOURCE-URPF {
+                from {
+                    source-address {
+%b
+                    }
+                }
+                then {
+                    accept;
+                }
+            }
+            term DEFAULT {
+                then discard;
+            }
+        }
+    }
+}
+"
+
+
 juniper_filter () {
 #Juniper firewall inbound filter 
-	FWFILTER=`bgpq4 -F "                        %n\/%l;\n" -A -R 24 $ASSET`
+#	FWFILTER=`bgpq4 -F "                        %n\/%l;\n" -A -R 24 $ASSET`
+	get_juniper_bgpq_prefix_list	
 	RC="$?"
 	if [ "$RC" != "0" ]; then
 		debug_echo "Recive error from bgpq4"
                 exit 1
         fi
 	if echo "$FWFILTER" | grep -q '[0-9]' >/dev/null; then
-		echo "firewall {
-    family inet {
-        replace:
-        filter $ACL {
-            term TRUSTED-SOURCE {
-                from {
-                    source-address {
-$FWFILTER
-			$LNET/$LNETMASK;
-                    }
-                }
-                then {
-                    accept;
-                }
-	}
-            term DEFAULT {
-                then discard;
-            }
-        }
-    }
-}"
-
+		printf "$juniper_firewall_template" "$ACL" "$ASSET" "$FWFILTER\n                        $LNET/$LNETMASK;"
 		ZEROWORK=1
 	else
 		ZEROOUTPUT=1
-		debug_echo "firewall {
-    family inet {
-       replace:
-       filter $ACL {
-            term TRUSTED-SOURCE {
-                from {
-                    source-address {
-$FWFILTER
-                        $LNET/$LNETMASK;
-                    }
-                }
-                then {
-                    accept;
-                }
-            }    
-            term DEFAULT {
-                then discard;
-            }
-        }
-    }
-}"
+		debug_echo "$(printf "$juniper_firewall_template" "$ACL" "$ASSET" "$FWFILTER\n                        $LNET/$LNETMASK;")"
 	fi
 }
 
 
 juniper_urpf_filter () {
 #Cisco acl for urpf loose
-	URPFLIST=`bgpq4 -F "                    	%n\/%l;\n" -A -R 24 $ASSET`
+#	URPFLIST=`bgpq4 -F "                    	%n\/%l;\n" -A -R 24 $ASSET`
+        get_juniper_bgpq_prefix_list
 	RC="$?"
 	if [ "$RC" != "0" ]; then
 		debug_echo "Recive error from bgpq"
 		exit 1
 	fi
-	if echo "$URPFLIST" | grep -q '[0-9]' >/dev/null; then
-		echo "firewall {
-    family inet {
-        replace:
-        filter $URPF {
-        /* URPF loose for $ASSET */
-            term TRUSTED-SOURCE-URPF {
-                from {
-                    source-address {
-$URPFLIST
-                    }
-                }
-                then {
-                    accept;
-                }
-	    }
-            term DEFAULT {
-                then discard;
-            }
-        }
-    }
-}"
-
+	if echo "$FWFILTER" | grep -q '[0-9]' >/dev/null; then
+		printf "$juniper_firewall_urpf_template" "$ACL" "$ASSET" "$FWFILTER"
 		ZEROWORK=1
 	else
 		ZEROOUTPUT=1
-		debug_echo "firewall {
-    family inet {
-        replace:
-        filter $URPF {
-        /* URPF loose for $ASSET */
-            term TRUSTED-SOURCE-URPF {
-                from {
-                    source-address {
-$URPFLIST
-                    }
-                }
-                then {
-                    accept;
-                }
-	    }
-            term DEFAULT {
-                then discard;
-            }
-        }
-    }
-}"
+		debug_echo "$(printf "$juniper_firewall_urpf_template" "$ACL" "$ASSET" "$FWFILTER")"
 	fi
 }
 
