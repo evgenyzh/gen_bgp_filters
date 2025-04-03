@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #Chack for bgpq4 and ipcalc
 if which bgpq4  >/dev/null
 then 
@@ -98,31 +98,44 @@ get_options () {
 }
 
 ipnetcalc () {
-#Perrform prefix check for correct lenth
-	if ipcalc $LNETIN | grep -q 'INVALID' >/dev/null
-		then
-			vecho "ERROR INVALID INPUT:"
-			vecho " "`ipcalc $LNETIN| grep 'INVALID'`
-			vecho "PLEASE INPUT AGAIN"
-		else
-			if [ $DEBUG != 0 ];then
-			vecho "Link network from input: $LNETIN"
-			fi
-			LNET=`ipcalc $LNETIN | grep Network | awk -F "   " '{print $2}' | awk -F "/" '{print $1}'`
-			RC="$?"
-			decho "Link network zero address calculated: $LNET"
-			if [ "$RC" != "0" ]; then
-				vecho "ipcalc error! Exit!"
-				exit 1
-			fi
-			LWSUBNET=`ipcalc $LNETIN | grep Wildcard |awk -F "  " '{print $2}'`
-			RC="$?"
-			decho "Link networ mask calculated: $LWSUBNET"
-			if [ "$RC" != "0" ]; then
-				echo "Ipcalc error! Exit!"
-				exit 1
-			fi
-	fi
+    # Perform ipcalc once and save the output
+    OUTPUT=$(ipcalc "$LNETIN")
+    debug_echo "$OUTPUT"
+
+    # Check if the output contains 'INVALID'
+    if echo "$OUTPUT" | grep -q 'INVALID'; then
+        vecho "ERROR INVALID INPUT:"
+        vecho " $(echo "$OUTPUT" | grep 'INVALID')"
+        vecho "PLEASE INPUT AGAIN"
+        return 1  # Return error code for the caller to handle
+    else
+        # Print debug message if DEBUG is enabled
+        [ "$DEBUG" != 0 ] && vecho "Link network from input: $LNETIN"
+
+        # Extract network address, mask length, and wildcard mask using awk
+	TEMP_VAR="$(
+	    echo "$OUTPUT" | awk '
+		/Network:/ {split($2, net, "/"); print net[1], net[2]}
+		/Wildcard:/ {print $2}
+	    ' | tr '\n' ' '
+	)"        
+	set -- $TEMP_VAR
+	debug_echo "$TEMP_VAR"
+        LNET=$2      # Network address
+        LNETMASK=$3  # Mask length
+        LWSUBNET=$1  # Wildcard mask
+
+        # Check if the values were successfully extracted
+        if [ -z "$LNET" ] || [ -z "$LNETMASK" ] || [ -z "$LWSUBNET" ]; then
+            vecho "Error: Failed to extract network information"
+            return 1
+        fi
+
+        # Print debug messages
+        debug_echo "Link network zero address calculated: $LNET"
+        debug_echo "Link network mask length calculated: $LNETMASK"
+        debug_echo "Link network wildcard mask calculated: $LWSUBNET"
+    fi
 }
 
 vecho () {
@@ -142,11 +155,27 @@ vecho () {
 
 }
 
-decho () {
-#Print debug output if enable
-if [ $DEBUG != 0 ];then
-	vecho "$1"
-fi
+
+# Combined function to handle vendor-specific debug output
+# Prints a message with a vendor-specific prefix only if debugging is enabled.
+# - Debugging is enabled if DEBUG is set and not equal to "0".
+# - Prefix is "#" for vendors "J" or "H".
+# - Prefix is "!" for all other cases (including unset CLIVENDOR or other values).
+debug_echo () {
+    # Check if debugging is enabled: DEBUG must be set and not "0"
+    if [ -n "$DEBUG" ] && [ "$DEBUG" != "0" ]; then
+        # Determine the prefix based on CLIVENDOR value
+        case "$CLIVENDOR" in
+            J) prefix="#" ;;  # Vendor J uses "#"
+            H) prefix="#" ;;  # Vendor H uses "#"
+            *) prefix="!" ;;  # All other cases (including unset) use "!"
+        esac
+        # Print the message with the prefix, supporting multiple arguments
+        input="$*"
+	printf "%s\n" "$input" | while IFS= read -r line; do
+		printf "%s%s\n" "$prefix" "$line"
+        done
+    fi
 }
 
 ################  Cisco specific ####################
@@ -157,7 +186,7 @@ cisco_as_path () {
 		ASPATHPR=`bgpq4 -f $AS -l $ASPATH -W 5 $ASSET `
 		RC="$?"
 		if [ "$RC" != "0" ]; then
-			decho "Recive error from bgpq4"
+			debug_echo "Recive error from bgpq4"
 			exit 1
 		fi
 		if echo "$ASPATHPR" | grep -q 'permit' >/dev/null; then
@@ -165,14 +194,14 @@ cisco_as_path () {
 			ZEROWORK=1
 		else 
 			ZEROOUTPUT=1
-			decho "Empty result found, exit status will be 1"
-			decho "$ASPATHPR"
+			debug_echo "Empty result found, exit status will be 1"
+			debug_echo "$ASPATHPR"
 		fi
 		echo "!"
 	else
-		decho ""
-		decho " Name of as-path list not defined, can not create it"
-		decho ""
+		debug_echo ""
+		debug_echo " Name of as-path list not defined, can not create it"
+		debug_echo ""
 	fi
 }
 
@@ -182,7 +211,7 @@ cisco_ip_prefix () {
 		PREFIXPR=`bgpq4 -A -l $PREFIX -R $ALLMASK $ASSET`
 		RC="$?"
 		if [ "$RC" != "0" ]; then
-			decho "Recive error from bgpq4"
+			debug_echo "Recive error from bgpq4"
 			exit 1
 		fi
 		if echo "$PREFIXPR" | grep -q 'permit' >/dev/null; then
@@ -190,15 +219,15 @@ cisco_ip_prefix () {
 			ZEROWORK=1
 		else
 			ZEROOUTPUT=1
-			decho "Empty result found, exit status will be 1"
-			decho "$PREFIXPR"
+			debug_echo "Empty result found, exit status will be 1"
+			debug_echo "$PREFIXPR"
 		fi
 		echo "!" 
 	else
 		PREFIXPR=`bgpq4 -A -l $PREFIX $ASSET`
 		RC="$?"
 		if [ "$RC" != "0" ]; then
-			decho "Recive error from bgpq4"
+			debug_echo "Recive error from bgpq4"
 			exit 1
 		fi
 		if echo "$PREFIXPR" | grep -q 'permit' >/dev/null; then
@@ -206,8 +235,8 @@ cisco_ip_prefix () {
 			ZEROWORK=1
 		else
 			ZEROOUTPUT=1
-			decho "Empty result found, exit status will be 1"
-			decho "$PREFIXPR"
+			debug_echo "Empty result found, exit status will be 1"
+			debug_echo "$PREFIXPR"
 		fi
 		echo "!"
 	fi
@@ -218,7 +247,7 @@ cisco_in_acl () {
     ACCESSLISTPR=`bgpq4 -F " permit ip %n %i any\n" -A -R 24 -l $ACL $ASSET`
 	RC="$?"
 	if [ "$RC" != "0" ]; then
-		decho "Recive error from bgpq4"
+		debug_echo "Recive error from bgpq4"
                 exit 1
         fi
 	if echo "$ACCESSLISTPR" | grep -q 'permit' >/dev/null; then
@@ -232,13 +261,13 @@ cisco_in_acl () {
 		ZEROWORK=1
 	else
 		ZEROOUTPUT=1
-		decho "Empty result found, exit status will be 1"
-		decho "no ip access-list extended $ACL"
-                decho "ip access-list extended $ACL"
-		decho "$ACCESSLISTPR"
-		decho " permit ip $LNET $LWSUBNET any"
-		decho "exit"
-		decho ""
+		debug_echo "Empty result found, exit status will be 1"
+		debug_echo "no ip access-list extended $ACL"
+                debug_echo "ip access-list extended $ACL"
+		debug_echo "$ACCESSLISTPR"
+		debug_echo " permit ip $LNET $LWSUBNET any"
+		debug_echo "exit"
+		debug_echo ""
 	fi
 }
 
@@ -247,7 +276,7 @@ cisco_urpf_acl () {
 	URPFLIST=`bgpq4 -F " permit %n %i\n" -A -R 24 -l $URPF $ASSET`
 	RC="$?"
 	if [ "$RC" != "0" ]; then
-		decho "Recive error from bgpq"
+		debug_echo "Recive error from bgpq"
 		exit 1
 	fi
 	if echo "$URPFLIST" | grep -q 'permit' >/dev/null; then
@@ -259,12 +288,12 @@ cisco_urpf_acl () {
 		ZEROWORK=1
 	else
 		ZEROOUTPUT=1
-		decho "Empty result found, exit status will be 1"
-		decho "no access-list $URPF"
-                decho "access-list $URPF remark * URPF loose for $ASSET *"
-                decho "$URPFLIST"
-                decho "exit"
-                decho ""
+		debug_echo "Empty result found, exit status will be 1"
+		debug_echo "no access-list $URPF"
+                debug_echo "access-list $URPF remark * URPF loose for $ASSET *"
+                debug_echo "$URPFLIST"
+                debug_echo "exit"
+                debug_echo ""
 	fi
 }
 
@@ -282,17 +311,17 @@ fi
 if [ -n "$AS" ]; then
 	cisco_as_path
 else
-	decho ""
-	decho " AUTONOMUS SYSTEM not defined, can not create as-path list"
-	decho ""
+	debug_echo ""
+	debug_echo " AUTONOMUS SYSTEM not defined, can not create as-path list"
+	debug_echo ""
 fi
 
 if [ -n "$PREFIX" ]; then
 	cisco_ip_prefix
 else 
-	decho ""
-	decho " Prefix list name not defined, can not create prefix-list"
-	decho ""
+	debug_echo ""
+	debug_echo " Prefix list name not defined, can not create prefix-list"
+	debug_echo ""
 fi
 
 if [ -n "$ACL" ]; then
@@ -300,22 +329,22 @@ if [ -n "$ACL" ]; then
 	if [ -n "$LNETIN" ]; then
 		cisco_in_acl
 	else 
-		decho ""
-		decho " Link network not defined, can not create access-list"
-		decho ""	
+		debug_echo ""
+		debug_echo " Link network not defined, can not create access-list"
+		debug_echo ""	
 	fi
 else
-	decho ""
-	decho " Access list name not defined, can not create access-list"
-	decho ""
+	debug_echo ""
+	debug_echo " Access list name not defined, can not create access-list"
+	debug_echo ""
 fi
 
 if [ -n "$URPF" ]; then
 	cisco_urpf_acl
 else
-	decho ""
-	decho " URPF list name not defined, can not create access-list for URPF"
-	decho ""
+	debug_echo ""
+	debug_echo " URPF list name not defined, can not create access-list for URPF"
+	debug_echo ""
 fi
 
 if [ $DEBUG != 0 ];then
@@ -338,7 +367,7 @@ juniper_as_path () {
 		ASPATHPR=`bgpq4 -J -f $AS -l $ASPATH -W 5 $ASSET`
 		RC="$?"
 		if [ "$RC" != "0" ]; then
-			decho "Recive error from bgpq4"
+			debug_echo "Recive error from bgpq4"
 			exit 1
 		fi
 		if echo "$ASPATHPR" | grep -q 'as-path' >/dev/null; then
@@ -346,14 +375,14 @@ juniper_as_path () {
 			ZEROWORK=1
 		else 
 			ZEROOUTPUT=1
-			decho "Empty result found, exit status will be 1"
-			decho "$ASPATHPR"
+			debug_echo "Empty result found, exit status will be 1"
+			debug_echo "$ASPATHPR"
 		fi
 		echo "#"
 	else
-		decho "#"
-		decho "# Name of as-path list not defined, can not create it"
-		decho "#"
+		debug_echo '
+Name of as-path list not defined, can not create it"
+'
 	fi
 }
 
@@ -363,7 +392,7 @@ juniper_route_filter () {
 		PREFIXPR=`bgpq4 -J -z -A -l $PREFIX -R $ALLMASK $ASSET`
 		RC="$?"
 		if [ "$RC" != "0" ]; then
-			decho "Recive error from bgpq4"
+			debug_echo "Recive error from bgpq4"
 			exit 1
 		fi
 		if echo "$PREFIXPR" | grep -qE "upto|exact|prefix-length-range" >/dev/null; then
@@ -371,15 +400,15 @@ juniper_route_filter () {
 			ZEROWORK=1
 		else
 			ZEROOUTPUT=1
-			decho "Empty result found, exit status will be 1"
-			decho "$PREFIXPR"
+			debug_echo "Empty result found, exit status will be 1"
+			debug_echo "$PREFIXPR"
 		fi
 		echo "#" 
 	else
 		PREFIXPR=`bgpq4 -J -z -A -l $PREFIX $ASSET`
 		RC="$?"
 		if [ "$RC" != "0" ]; then
-			decho "Recive error from bgpq4"
+			debug_echo "Recive error from bgpq4"
 			exit 1
 		fi
 		if echo "$PREFIXPR" | grep -qE "upto|exact|prefix-length-range" >/dev/null; then
@@ -387,8 +416,8 @@ juniper_route_filter () {
 			ZEROWORK=1
 		else
 			ZEROOUTPUT=1
-			decho "Empty result found, exit status will be 1"
-			decho "$PREFIXPR"
+			debug_echo "Empty result found, exit status will be 1"
+			debug_echo "$PREFIXPR"
 		fi
 		echo "#"
 	fi
@@ -396,61 +425,59 @@ juniper_route_filter () {
 
 juniper_filter () {
 #Juniper firewall inbound filter 
-	FWFILTER=`bgpq4 -F "                    	%n\/%l;\n" -A -R 24 $ASSET`
+	FWFILTER=`bgpq4 -F "                        %n\/%l;\n" -A -R 24 $ASSET`
 	RC="$?"
 	if [ "$RC" != "0" ]; then
-		decho "Recive error from bgpq4"
+		debug_echo "Recive error from bgpq4"
                 exit 1
         fi
 	if echo "$FWFILTER" | grep -q '[0-9]' >/dev/null; then
-		echo 'firewall {
-    family inet {'
-                echo "        replace:"
-		echo "        filter $ACL {"
-		echo '            term TRUSTED-SOURCE {
+		echo "firewall {
+    family inet {
+        replace:
+        filter $ACL {
+            term TRUSTED-SOURCE {
                 from {
-                    source-address {'
-		echo "$FWFILTER"
-		echo "                        $LNETIN;"
-		echo '                    }
+                    source-address {
+$FWFILTER
+			$LNET/$LNETMASK;
+                    }
                 }
                 then {
                     accept;
                 }
-            }
+	}
             term DEFAULT {
                 then discard;
             }
         }
     }
-}'
-		echo "#"
+}"
 
 		ZEROWORK=1
 	else
 		ZEROOUTPUT=1
-		decho 'firewall {
-#    family inet {'
-                decho "        replace:"
-		decho "        filter $ACL {"
-		decho '            term TRUSTED-SOURCE {
-#                from {
-#                    source-address {'
-		decho "$FWFILTER"
-		decho "                        $LNETIN;"
-		decho '                    }
-#                }
-#                then {
-#                    accept;
-#                }
-#            }    
-#            term DEFAULT {
-#                then discard;
-#            }
-#        }
-#    }
-#}'
-		decho ""
+		debug_echo "firewall {
+    family inet {
+       replace:
+       filter $ACL {
+            term TRUSTED-SOURCE {
+                from {
+                    source-address {
+$FWFILTER
+                        $LNET/$LNETMASK;
+                    }
+                }
+                then {
+                    accept;
+                }
+            }    
+            term DEFAULT {
+                then discard;
+            }
+        }
+    }
+}"
 	fi
 }
 
@@ -460,20 +487,20 @@ juniper_urpf_filter () {
 	URPFLIST=`bgpq4 -F "                    	%n\/%l;\n" -A -R 24 $ASSET`
 	RC="$?"
 	if [ "$RC" != "0" ]; then
-		decho "Recive error from bgpq"
+		debug_echo "Recive error from bgpq"
 		exit 1
 	fi
 	if echo "$URPFLIST" | grep -q '[0-9]' >/dev/null; then
-		echo 'firewall {
-    family inet {'
-                echo "        replace:"
-                echo "        filter $URPF {"
-		echo "        /* URPF loose for $ASSET */"
-		echo '            term TRUSTED-SOURCE-URPF {
+		echo "firewall {
+    family inet {
+        replace:
+        filter $URPF {
+        /* URPF loose for $ASSET */
+            term TRUSTED-SOURCE-URPF {
                 from {
-                    source-address {'
-		echo "$URPFLIST"
-		echo '                    }
+                    source-address {
+$URPFLIST
+                    }
                 }
                 then {
                     accept;
@@ -484,33 +511,32 @@ juniper_urpf_filter () {
             }
         }
     }
-}'
-		echo "#"
+}"
+
 		ZEROWORK=1
 	else
 		ZEROOUTPUT=1
-		decho 'firewall {
-#    family inet {'
-		decho "        replace:"    
-		decho "        filter $URPF {"
-		decho "        /* URPF loose for $ASSET */"
-		decho '            term TRUSTED-SOURCE-URPF {
-#                from {
-#                    source-address {'
-		decho "$URPFLIST"
-		decho '                    }
-#                }
-#                then {
-#                    accept;
-#                }
-#            }
-#            term DEFAULT {
-#                then discard;
-#            }
-#        }
-#    }
-#}'
-		decho ""
+		debug_echo "firewall {
+    family inet {
+        replace:
+        filter $URPF {
+        /* URPF loose for $ASSET */
+            term TRUSTED-SOURCE-URPF {
+                from {
+                    source-address {
+$URPFLIST
+                    }
+                }
+                then {
+                    accept;
+                }
+	    }
+            term DEFAULT {
+                then discard;
+            }
+        }
+    }
+}"
 	fi
 }
 
@@ -519,55 +545,60 @@ juniper () {
 #Junos specific output
 if [ $DEBUG != 0 ];then
 	echo '#
-	#configure
-	#
-#load replace terminal'
-else
-	echo '#
 #configure
 #
 #load replace terminal
 #'
-echo "#"
+else
+         echo '#
+#configure
+#
+#load replace terminal
+#
+#'
 fi
 
 if [ -n "$AS" ]; then
 	juniper_as_path
+	echo "#"
 else
-	decho ""
-	decho " AUTONOMUS SYSTEM not defined, can not create as-path-group "
-	decho ""
+	debug_echo ""
+	debug_echo " AUTONOMUS SYSTEM not defined, can not create as-path-group "
+	debug_echo ""
 fi
 
 if [ -n "$PREFIX" ]; then
 	juniper_route_filter
+	echo "#"
 else 
-	decho ""
-	decho " Prefix list name not defined, can not create route-filter-list"
-	decho ""
+	debug_echo ""
+	debug_echo " Prefix list name not defined, can not create route-filter-list"
+	debug_echo ""
 fi
 
 if [ -n "$ACL" ]; then
 	
 	if [ -n "$LNETIN" ]; then
 		juniper_filter
+		echo "#"
 	else 
-		decho ""
-		decho " Link network not defined, can not create inbound filter"
-		decho ""	
+		debug_echo ""
+		debug_echo " Link network not defined, can not create inbound filter"
+		debug_echo ""	
 	fi
 else
-	decho ""
-	decho " Access list name not defined, can not create inbound filter"
-	decho ""
+	debug_echo ""
+	debug_echo " Access list name not defined, can not create inbound filter"
+	debug_echo ""
 fi
 
 if [ -n "$URPF" ]; then
 	juniper_urpf_filter
+	echo "#"
 else
-	decho ""
-	decho " URPF list name not defined, can not create access-list for URPF filter"
-	decho ""
+	debug_echo ""
+	debug_echo " URPF list name not defined, can not create access-list for URPF filter"
+	debug_echo ""
 fi
 
 if [ $DEBUG != 0 ];then
@@ -603,7 +634,7 @@ if [ $ZEROOUTPUT != 0 ];then
 fi
 
 if [ $ZEROWORK = 0 ];then
-	decho "No one list caculated. Will be exit status 1"
+	debug_echo "No one list caculated. Will be exit status 1"
 	exit 1
 fi
 
