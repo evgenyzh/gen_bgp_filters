@@ -83,7 +83,7 @@ end
 The following example shows how to generate a BGP filter for Juniper:
 
 ```sh
-./gen_bgp_filters.sh -R 24 -V J -A AS8345 -S 8345 -F 11 -P prefix-dsi-in -U 1800 -G acl-dsi-in -L 10.10.10.10/30
+./gen_bgp_filters.sh -R 24 -V J -A AS8345 -S 8345 -F 11 -P prefix-dsi-in -U urpf-dsi -G acl-dsi-in -L 10.10.10.10/30
 #
 #JunOS config:
 #
@@ -142,7 +142,7 @@ firewall {
 firewall {
     family inet {
         replace:
-        filter acl-dsi-in {
+        filter urpf-dsi {
         /* URPF loose for AS8345 */
             term TRUSTED-SOURCE-URPF {
                 from {

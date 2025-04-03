@@ -501,11 +501,11 @@ juniper_urpf_filter () {
 		exit 1
 	fi
 	if echo "$FWFILTER" | grep -q '[0-9]' >/dev/null; then
-		printf "$juniper_firewall_urpf_template" "$ACL" "$ASSET" "$FWFILTER"
+		printf "$juniper_firewall_urpf_template" "$URPF" "$ASSET" "$FWFILTER"
 		ZEROWORK=1
 	else
 		ZEROOUTPUT=1
-		debug_echo "$(printf "$juniper_firewall_urpf_template" "$ACL" "$ASSET" "$FWFILTER")"
+		debug_echo "$(printf "$juniper_firewall_urpf_template" "$URPF" "$ASSET" "$FWFILTER")"
 	fi
 }
 
